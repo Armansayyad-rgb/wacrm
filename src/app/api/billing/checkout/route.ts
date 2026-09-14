@@ -5,6 +5,13 @@ import {
   updatePaddleSubscription,
 } from '@/lib/billing/paddle'
 import { isPlanId } from '@/lib/saas/entitlements'
+import type { PlanId } from '@/config/saas'
+
+const PLAN_RANK: Record<PlanId, number> = {
+  starter: 1,
+  business: 2,
+  pro: 3,
+}
 
 export async function POST(request: Request) {
   try {
@@ -32,15 +39,21 @@ export async function POST(request: Request) {
 
     if (
       existing?.provider === 'paddle' &&
-      existing.provider_subscription_id
+      existing.provider_subscription_id &&
+      isPlanId(existing.plan)
     ) {
       if (existing.plan === plan) {
         return NextResponse.json({ changed: false, plan })
       }
+
+      const upgrading = PLAN_RANK[plan] > PLAN_RANK[existing.plan]
       await updatePaddleSubscription({
         subscriptionId: existing.provider_subscription_id,
         accountId,
         plan,
+        prorationBillingMode: upgrading
+          ? 'prorated_immediately'
+          : 'prorated_next_billing_period',
       })
       return NextResponse.json({ changed: true, plan })
     }
