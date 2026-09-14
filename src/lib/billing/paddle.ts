@@ -69,6 +69,25 @@ export async function createPaddleCheckout(input: {
   return url
 }
 
+export async function updatePaddleSubscription(input: {
+  subscriptionId: string
+  accountId: string
+  plan: PlanId
+}): Promise<void> {
+  await paddleRequest(`/subscriptions/${encodeURIComponent(input.subscriptionId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      items: [{ price_id: getPaddlePriceId(input.plan), quantity: 1 }],
+      proration_billing_mode: 'prorated_immediately',
+      on_payment_failure: 'prevent_change',
+      custom_data: {
+        account_id: input.accountId,
+        plan_id: input.plan,
+      },
+    }),
+  })
+}
+
 export async function createPaddlePortalSession(customerId: string): Promise<string> {
   const result = await paddleRequest<{
     data: { urls?: { general?: { overview?: string | null } } }
@@ -99,8 +118,6 @@ export function verifyPaddleSignature(
 
   const timestamp = Number(ts)
   if (!Number.isFinite(timestamp)) return false
-  // Five minutes permits normal delivery latency while still rejecting
-  // old replayed payloads. Signature verification itself remains exact.
   if (Math.abs(Math.floor(Date.now() / 1000) - timestamp) > 300) return false
 
   const expected = createHmac('sha256', secret)
