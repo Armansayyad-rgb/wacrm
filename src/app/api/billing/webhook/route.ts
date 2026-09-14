@@ -109,7 +109,7 @@ export async function POST(request: Request) {
         const stale =
           Number.isFinite(incomingAt) &&
           Number.isFinite(currentAt) &&
-          incomingAt <= currentAt
+          incomingAt < currentAt
 
         if (!stale) {
           const period = event.data.current_billing_period
