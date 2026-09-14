@@ -95,29 +95,48 @@ export async function POST(request: Request) {
         isPlanId(plan) &&
         status
       ) {
-        const period = event.data.current_billing_period
-        const cancelAtPeriodEnd = event.data.scheduled_change?.action === 'cancel'
-
-        const { error } = await admin
+        const { data: current, error: currentError } = await admin
           .from('account_subscriptions')
-          .upsert(
-            {
-              account_id: accountId,
-              plan,
-              status: mapPaddleStatus(status),
-              provider: 'paddle',
-              provider_customer_id: event.data.customer_id ?? null,
-              provider_subscription_id: subscriptionId ?? null,
-              trial_ends_at: null,
-              current_period_start: period?.starts_at ?? null,
-              current_period_end: period?.ends_at ?? null,
-              cancel_at_period_end: cancelAtPeriodEnd,
-            },
-            { onConflict: 'account_id' },
-          )
-        if (error) throw error
-      } else if (SUBSCRIPTION_EVENTS.has(event.event_type)) {
-        throw new Error('Subscription event could not be mapped to a FlowCRM account')
+          .select('provider_event_occurred_at')
+          .eq('account_id', accountId)
+          .maybeSingle()
+        if (currentError) throw currentError
+
+        const incomingAt = event.occurred_at ? Date.parse(event.occurred_at) : NaN
+        const currentAt = current?.provider_event_occurred_at
+          ? Date.parse(current.provider_event_occurred_at)
+          : NaN
+        const stale =
+          Number.isFinite(incomingAt) &&
+          Number.isFinite(currentAt) &&
+          incomingAt <= currentAt
+
+        if (!stale) {
+          const period = event.data.current_billing_period
+          const cancelAtPeriodEnd = event.data.scheduled_change?.action === 'cancel'
+
+          const { error } = await admin
+            .from('account_subscriptions')
+            .upsert(
+              {
+                account_id: accountId,
+                plan,
+                status: mapPaddleStatus(status),
+                provider: 'paddle',
+                provider_customer_id: event.data.customer_id ?? null,
+                provider_subscription_id: subscriptionId ?? null,
+                trial_ends_at: null,
+                current_period_start: period?.starts_at ?? null,
+                current_period_end: period?.ends_at ?? null,
+                cancel_at_period_end: cancelAtPeriodEnd,
+                provider_event_occurred_at: event.occurred_at ?? null,
+              },
+              { onConflict: 'account_id' },
+            )
+          if (error) throw error
+        }
+      } else {
+        throw new Error('Subscription event could not be mapped to an account')
       }
     }
 
