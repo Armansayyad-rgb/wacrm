@@ -21,6 +21,10 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- Serialize membership allocation per account so two concurrent invite
+  -- acceptances cannot both observe the same seat count and over-allocate.
+  PERFORM pg_advisory_xact_lock(hashtextextended(NEW.account_id::text, 0));
+
   SELECT plan::text
   INTO plan_name
   FROM account_subscriptions
@@ -41,11 +45,18 @@ BEGIN
     ELSE 0
   END;
 
-  SELECT COUNT(*)
-  INTO current_seats
-  FROM profiles
-  WHERE account_id = NEW.account_id
-    AND (TG_OP <> 'UPDATE' OR user_id <> OLD.user_id);
+  IF TG_OP = 'UPDATE' THEN
+    SELECT COUNT(*)
+    INTO current_seats
+    FROM profiles
+    WHERE account_id = NEW.account_id
+      AND user_id <> OLD.user_id;
+  ELSE
+    SELECT COUNT(*)
+    INTO current_seats
+    FROM profiles
+    WHERE account_id = NEW.account_id;
+  END IF;
 
   IF current_seats >= seat_limit THEN
     RAISE EXCEPTION 'account seat limit reached for plan %', plan_name;
