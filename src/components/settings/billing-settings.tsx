@@ -4,12 +4,14 @@ import { useState } from 'react'
 import { SAAS_PLANS, type PlanId } from '@/config/saas'
 
 export function BillingSettings() {
-  const [loading, setLoading] = useState<PlanId | null>(null)
+  const [loading, setLoading] = useState<PlanId | 'portal' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
-  async function checkout(plan: PlanId) {
+  async function choosePlan(plan: PlanId) {
     setLoading(plan)
     setError(null)
+    setNotice(null)
     try {
       const response = await fetch('/api/billing/checkout', {
         method: 'POST',
@@ -17,28 +19,70 @@ export function BillingSettings() {
         body: JSON.stringify({ plan }),
       })
       const body = await response.json().catch(() => null)
-      if (!response.ok || !body?.checkout_url) {
-        throw new Error(body?.error || 'Could not start checkout')
+      if (!response.ok) throw new Error(body?.error || 'Could not update plan')
+
+      if (body?.checkout_url) {
+        window.location.assign(body.checkout_url)
+        return
       }
-      window.location.assign(body.checkout_url)
+
+      if (body?.changed === true) {
+        setNotice('Plan change submitted. Access updates when the billing webhook confirms it.')
+      } else {
+        setNotice('This workspace is already on that plan.')
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not start checkout')
+      setError(err instanceof Error ? err.message : 'Could not update plan')
+    } finally {
+      setLoading(null)
+    }
+  }
+
+  async function openPortal() {
+    setLoading('portal')
+    setError(null)
+    setNotice(null)
+    try {
+      const response = await fetch('/api/billing/portal', { method: 'POST' })
+      const body = await response.json().catch(() => null)
+      if (!response.ok || !body?.portal_url) {
+        throw new Error(body?.error || 'Billing portal is not available yet')
+      }
+      window.location.assign(body.portal_url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not open billing portal')
       setLoading(null)
     }
   }
 
   return (
     <section className="space-y-5">
-      <div>
-        <h2 className="text-lg font-semibold text-foreground">Plans & billing</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Global monthly pricing. Checkout can localize currency and applicable taxes.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">Plans & billing</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Global monthly pricing. Checkout can localize currency and applicable taxes.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={openPortal}
+          disabled={loading !== null}
+          className="inline-flex items-center justify-center rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
+        >
+          {loading === 'portal' ? 'Opening…' : 'Manage billing'}
+        </button>
       </div>
 
       {error ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
           {error}
+        </div>
+      ) : null}
+
+      {notice ? (
+        <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-foreground">
+          {notice}
         </div>
       ) : null}
 
@@ -63,11 +107,11 @@ export function BillingSettings() {
 
             <button
               type="button"
-              onClick={() => checkout(plan.id)}
+              onClick={() => choosePlan(plan.id)}
               disabled={loading !== null}
               className="mt-5 inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
             >
-              {loading === plan.id ? 'Opening checkout…' : `Choose ${plan.name}`}
+              {loading === plan.id ? 'Updating…' : `Choose ${plan.name}`}
             </button>
           </div>
         ))}
