@@ -84,25 +84,6 @@ export async function POST(request: Request) {
         { status: 403 },
       )
     }
-    const monthlyLimit = getPlan(subscription.plan).broadcastsPerMonth
-    const { data: quotaAllowed, error: quotaError } = await supabase.rpc(
-      'consume_saas_monthly_quota',
-      {
-        target_account_id: accountId,
-        feature_name: 'broadcast',
-        quota_limit: monthlyLimit,
-      },
-    )
-    if (quotaError) {
-      console.error('[broadcast] quota check failed:', quotaError)
-      return NextResponse.json({ error: 'Could not verify broadcast quota' }, { status: 500 })
-    }
-    if (quotaAllowed !== true) {
-      return NextResponse.json(
-        { error: `${getPlan(subscription.plan).name} monthly broadcast limit reached.` },
-        { status: 403 },
-      )
-    }
 
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
@@ -138,6 +119,26 @@ export async function POST(request: Request) {
       )
     }
     const templateRow = resolvedTemplate.row
+
+    const monthlyLimit = getPlan(subscription.plan).broadcastsPerMonth
+    const { data: quotaAllowed, error: quotaError } = await supabase.rpc(
+      'consume_saas_monthly_quota',
+      {
+        target_account_id: accountId,
+        feature_name: 'broadcast',
+        quota_limit: monthlyLimit,
+      },
+    )
+    if (quotaError) {
+      console.error('[broadcast] quota check failed:', quotaError)
+      return NextResponse.json({ error: 'Could not verify broadcast quota' }, { status: 500 })
+    }
+    if (quotaAllowed !== true) {
+      return NextResponse.json(
+        { error: `${getPlan(subscription.plan).name} monthly broadcast limit reached.` },
+        { status: 403 },
+      )
+    }
 
     const results: BroadcastResult[] = []
     let sentCount = 0
