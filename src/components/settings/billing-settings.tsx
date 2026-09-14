@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Script from 'next/script'
 import { SAAS_PLANS, type PlanId } from '@/config/saas'
 
 type SubscriptionOverview = {
@@ -13,14 +12,6 @@ type SubscriptionOverview = {
   provider: string | null
 } | null
 
-type PaddleWindow = Window & {
-  Paddle?: {
-    Environment: { set: (environment: 'sandbox') => void }
-    Initialize: (options: { token: string }) => void
-  }
-  __flowcrmPaddleInitialized?: boolean
-}
-
 export function BillingSettings() {
   const [loading, setLoading] = useState<PlanId | 'portal' | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -28,19 +19,6 @@ export function BillingSettings() {
   const [subscription, setSubscription] = useState<SubscriptionOverview>(null)
 
   const paddleClientToken = process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN?.trim()
-  const paddleEnvironment = process.env.NEXT_PUBLIC_PADDLE_ENVIRONMENT
-
-  function initializePaddle() {
-    if (!paddleClientToken) return
-    const paddleWindow = window as PaddleWindow
-    if (!paddleWindow.Paddle || paddleWindow.__flowcrmPaddleInitialized) return
-
-    if (paddleEnvironment === 'sandbox') {
-      paddleWindow.Paddle.Environment.set('sandbox')
-    }
-    paddleWindow.Paddle.Initialize({ token: paddleClientToken })
-    paddleWindow.__flowcrmPaddleInitialized = true
-  }
 
   async function refreshSubscription() {
     const response = await fetch('/api/billing/overview', { cache: 'no-store' })
@@ -109,12 +87,6 @@ export function BillingSettings() {
 
   return (
     <section className="space-y-5">
-      <Script
-        src="https://cdn.paddle.com/paddle/v2/paddle.js"
-        strategy="afterInteractive"
-        onReady={initializePaddle}
-      />
-
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-foreground">Plans & billing</h2>
