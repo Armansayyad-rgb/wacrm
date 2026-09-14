@@ -49,6 +49,10 @@ Enable subscription lifecycle notifications including created, updated, activate
 
 Apply all Supabase migrations in numeric order. The SaaS additions begin at migration 043. Migration 047 adds out-of-order webhook protection.
 
+## Continuous integration
+
+The SaaS branch is covered by the repository CI workflow. Pushes to `saas/**` run lint, typecheck, tests, and a production build before the branch is considered merge-ready.
+
 ## Test before production
 
 1. Sign up and confirm a Starter trial is created.
