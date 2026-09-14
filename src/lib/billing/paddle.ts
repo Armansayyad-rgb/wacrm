@@ -73,12 +73,13 @@ export async function updatePaddleSubscription(input: {
   subscriptionId: string
   accountId: string
   plan: PlanId
+  prorationBillingMode: 'prorated_immediately' | 'prorated_next_billing_period'
 }): Promise<void> {
   await paddleRequest(`/subscriptions/${encodeURIComponent(input.subscriptionId)}`, {
     method: 'PATCH',
     body: JSON.stringify({
       items: [{ price_id: getPaddlePriceId(input.plan), quantity: 1 }],
-      proration_billing_mode: 'prorated_immediately',
+      proration_billing_mode: input.prorationBillingMode,
       on_payment_failure: 'prevent_change',
       custom_data: {
         account_id: input.accountId,
