@@ -15,7 +15,7 @@ export type PlanId = "starter" | "business" | "pro";
 export type SaaSPlan = {
   id: PlanId;
   name: string;
-  monthlyPriceInr: number;
+  monthlyPriceUsd: number;
   seats: number;
   broadcastsPerMonth: number;
   automations: number;
@@ -28,7 +28,7 @@ export const SAAS_PLANS: Record<PlanId, SaaSPlan> = {
   starter: {
     id: "starter",
     name: "Starter",
-    monthlyPriceInr: 499,
+    monthlyPriceUsd: 9,
     seats: 2,
     broadcastsPerMonth: 2,
     automations: 3,
@@ -39,7 +39,7 @@ export const SAAS_PLANS: Record<PlanId, SaaSPlan> = {
   business: {
     id: "business",
     name: "Business",
-    monthlyPriceInr: 999,
+    monthlyPriceUsd: 19,
     seats: 5,
     broadcastsPerMonth: 10,
     automations: 20,
@@ -50,7 +50,7 @@ export const SAAS_PLANS: Record<PlanId, SaaSPlan> = {
   pro: {
     id: "pro",
     name: "Pro",
-    monthlyPriceInr: 1999,
+    monthlyPriceUsd: 39,
     seats: 15,
     broadcastsPerMonth: 50,
     automations: 100,
