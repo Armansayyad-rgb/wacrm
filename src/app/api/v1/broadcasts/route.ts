@@ -1,47 +1,17 @@
-// ============================================================
-// POST /api/v1/broadcasts — launch a template broadcast
-// (scope: broadcasts:send).
-//
-// Body:
-//   {
-//     "name": "July promo",                 // optional label
-//     "template_name": "promo_july",        // required, approved template
-//     "template_language": "en_US",         // optional (default en_US)
-//     "recipients": [                        // required, 1..1000
-//       { "to": "+14155550123", "params": ["Jane"] },
-//       { "to": "+14155550124" }
-//     ]
-//   }
-//
-// The broadcast + its recipient rows are persisted synchronously, then
-// the Meta fan-out runs in `after()` so the request returns fast. Poll
-// `GET /api/v1/broadcasts/{id}` for progress.
-//
-// Response (202):
-//   { "data": { "broadcast_id", "status": "sending",
-//               "total_recipients", "accepted", "rejected" } }
-// ============================================================
-
 import { after } from 'next/server';
 
 import { requireApiKey } from '@/lib/auth/api-context';
-
-// The `after()` fan-out below sends to every recipient sequentially and
-// runs within this route's max duration (the same constraint the
-// webhook route documents). Give it headroom beyond the platform
-// default so a modest batch isn't cut off mid-send — which would leave
-// recipient rows 'pending' and the broadcast stuck 'sending'. This is a
-// bound, not a guarantee: a near-cap (MAX_RECIPIENTS) audience can
-// still exceed 60s, so very large sends should be split across
-// requests. A durable queue/cron drain is the complete fix (follow-up).
-export const maxDuration = 60;
 import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
 import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
+import { loadSubscription } from '@/lib/saas/subscription';
+import { getPlan } from '@/lib/saas/entitlements';
 import {
   createBroadcast,
   deliverBroadcast,
   BroadcastError,
 } from '@/lib/whatsapp/broadcast-core';
+
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {
@@ -59,6 +29,41 @@ export async function POST(request: Request) {
       typeof body.template_name === 'string' ? body.template_name : '';
     const recipients = Array.isArray(body.recipients) ? body.recipients : [];
 
+    if (!templateName || recipients.length === 0) {
+      return fail(
+        'bad_request',
+        'template_name and at least one recipient are required',
+        400,
+      );
+    }
+
+    const subscription = await loadSubscription(ctx.supabase, ctx.accountId);
+    if (!subscription?.active) {
+      return fail('forbidden', 'An active subscription is required', 403);
+    }
+
+    const monthlyLimit = getPlan(subscription.plan).broadcastsPerMonth;
+    const { data: quotaAllowed, error: quotaError } = await ctx.supabase.rpc(
+      'consume_saas_monthly_quota',
+      {
+        target_account_id: ctx.accountId,
+        feature_name: 'broadcast',
+        quota_limit: monthlyLimit,
+      },
+    );
+
+    if (quotaError) {
+      console.error('[api/v1/broadcasts] quota check failed:', quotaError);
+      return fail('internal', 'Could not verify broadcast quota', 500);
+    }
+    if (quotaAllowed !== true) {
+      return fail(
+        'forbidden',
+        `${getPlan(subscription.plan).name} monthly broadcast limit reached`,
+        403,
+      );
+    }
+
     const auditUserId = await resolveAuditUserId(ctx.supabase, ctx.accountId);
 
     const plan = await createBroadcast(ctx.supabase, ctx.accountId, auditUserId, {
@@ -74,9 +79,6 @@ export async function POST(request: Request) {
       })),
     });
 
-    // Fan out after the response is sent. Uses the same service-role
-    // client — no request-scoped auth needed for the Meta calls or
-    // the account-scoped row updates.
     after(() => deliverBroadcast(ctx.supabase, plan));
 
     return ok(
