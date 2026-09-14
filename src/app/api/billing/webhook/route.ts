@@ -67,9 +67,27 @@ export async function POST(request: Request) {
 
   try {
     if (SUBSCRIPTION_EVENTS.has(event.event_type) && event.data) {
-      const accountId = event.data.custom_data?.account_id
-      const plan = event.data.custom_data?.plan_id
       const status = event.data.status
+      const subscriptionId = event.data.id
+      let accountId = event.data.custom_data?.account_id
+      let plan = event.data.custom_data?.plan_id
+
+      if (
+        (!accountId || !plan || !isPlanId(typeof plan === 'string' ? plan : null)) &&
+        subscriptionId
+      ) {
+        const { data: existing, error: lookupError } = await admin
+          .from('account_subscriptions')
+          .select('account_id, plan')
+          .eq('provider', 'paddle')
+          .eq('provider_subscription_id', subscriptionId)
+          .maybeSingle()
+        if (lookupError) throw lookupError
+        if (existing) {
+          accountId = existing.account_id
+          plan = existing.plan
+        }
+      }
 
       if (
         typeof accountId === 'string' &&
@@ -78,8 +96,7 @@ export async function POST(request: Request) {
         status
       ) {
         const period = event.data.current_billing_period
-        const cancelAtPeriodEnd =
-          event.data.scheduled_change?.action === 'cancel'
+        const cancelAtPeriodEnd = event.data.scheduled_change?.action === 'cancel'
 
         const { error } = await admin
           .from('account_subscriptions')
@@ -90,7 +107,7 @@ export async function POST(request: Request) {
               status: mapPaddleStatus(status),
               provider: 'paddle',
               provider_customer_id: event.data.customer_id ?? null,
-              provider_subscription_id: event.data.id ?? null,
+              provider_subscription_id: subscriptionId ?? null,
               trial_ends_at: null,
               current_period_start: period?.starts_at ?? null,
               current_period_end: period?.ends_at ?? null,
@@ -99,6 +116,8 @@ export async function POST(request: Request) {
             { onConflict: 'account_id' },
           )
         if (error) throw error
+      } else if (SUBSCRIPTION_EVENTS.has(event.event_type)) {
+        throw new Error('Subscription event could not be mapped to a FlowCRM account')
       }
     }
 
