@@ -4,6 +4,8 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { getTemplate } from '@/lib/automations/templates'
 import { insertSteps, type BuilderStepInput } from '@/lib/automations/steps-tree'
+import { loadSubscription } from '@/lib/saas/subscription'
+import { canCreateAutomation, getPlan } from '@/lib/saas/entitlements'
 import {
   validateStepsForActivation,
   validateTriggerForActivation,
@@ -25,9 +27,6 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  // Creating an automation is a write — the RLS automations_insert policy
-  // requires `agent`, but this route inserts via the service-role client
-  // which bypasses RLS, so the role must be enforced here.
   try {
     await requireRole('agent')
   } catch (err) {
@@ -40,9 +39,6 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Resolve the caller's account_id — `automations.account_id` is NOT
-  // NULL post-017, so an INSERT without it trips the not-null constraint
-  // even though the admin client bypasses RLS.
   const { data: profile } = await supabase
     .from('profiles')
     .select('account_id')
@@ -52,6 +48,25 @@ export async function POST(request: Request) {
   if (!accountId) {
     return NextResponse.json(
       { error: 'Your profile is not linked to an account.' },
+      { status: 403 },
+    )
+  }
+
+  const subscription = await loadSubscription(supabase, accountId)
+  if (!subscription?.active) {
+    return NextResponse.json({ error: 'An active subscription is required.' }, { status: 403 })
+  }
+
+  const { count: automationCount, error: countError } = await supabase
+    .from('automations')
+    .select('id', { count: 'exact', head: true })
+    .eq('account_id', accountId)
+  if (countError) {
+    return NextResponse.json({ error: 'Could not verify automation limit' }, { status: 500 })
+  }
+  if (!canCreateAutomation(subscription.plan, automationCount ?? 0)) {
+    return NextResponse.json(
+      { error: `${getPlan(subscription.plan).name} automation limit reached.` },
       { status: 403 },
     )
   }
@@ -85,10 +100,6 @@ export async function POST(request: Request) {
     )
   }
 
-  // Block activation of a clearly broken automation up-front instead of
-  // letting every trigger silently produce a failed log row. Drafts
-  // (is_active=false) are allowed to be incomplete so users can save
-  // progress mid-build.
   if (is_active) {
     const issues = [
       ...validateTriggerForActivation(effectiveTriggerType, effectiveTriggerConfig ?? {}),

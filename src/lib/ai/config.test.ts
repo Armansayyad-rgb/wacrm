@@ -6,6 +6,15 @@ vi.mock('@/lib/whatsapp/encryption', () => ({
   decrypt: (v: string) => `plain:${v}`,
 }))
 
+// AI config is now SaaS-entitlement gated. These tests exercise the
+// requireActive behavior, so give the account an active Business plan.
+vi.mock('@/lib/saas/subscription', () => ({
+  loadSubscription: vi.fn().mockResolvedValue({
+    active: true,
+    plan: 'business',
+  }),
+}))
+
 import { loadAiConfig } from './config'
 
 function dbReturning(row: Record<string, unknown> | null): SupabaseClient {
